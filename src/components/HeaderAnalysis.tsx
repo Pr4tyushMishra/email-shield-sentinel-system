@@ -1,15 +1,112 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Eye, MapPin, Clock, Server } from "lucide-react";
+import { Eye, MapPin, Clock, Server, Mail, Shield } from "lucide-react";
 
-const HeaderAnalysis = () => {
-  const headerData = [
-    { label: "Sender IP", value: "192.168.1.100", status: "suspicious", icon: Server },
-    { label: "Geolocation", value: "Unknown/VPN", status: "warning", icon: MapPin },
-    { label: "Received Time", value: "2024-06-03 14:30:25 UTC", status: "normal", icon: Clock },
-    { label: "Message-ID", value: "malformed", status: "suspicious", icon: Eye },
-  ];
+interface HeaderAnalysisProps {
+  emailHeaders?: string;
+}
+
+const HeaderAnalysis = ({ emailHeaders }: HeaderAnalysisProps) => {
+  const analyzeHeaders = (headers: string) => {
+    if (!headers) {
+      return [
+        { label: "Status", value: "No headers provided", status: "warning", icon: Eye },
+        { label: "Analysis", value: "Upload email to analyze", status: "normal", icon: Shield },
+      ];
+    }
+
+    const headerLines = headers.toLowerCase().split('\n');
+    const analysis = [];
+
+    // Analyze sender IP
+    const receivedLine = headerLines.find(line => line.includes('received:') && line.includes('['));
+    if (receivedLine) {
+      const ipMatch = receivedLine.match(/\[(\d+\.\d+\.\d+\.\d+)\]/);
+      if (ipMatch) {
+        const ip = ipMatch[1];
+        const isPrivate = ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('172.');
+        analysis.push({
+          label: "Sender IP",
+          value: ip,
+          status: isPrivate ? "normal" : "warning",
+          icon: Server
+        });
+      }
+    } else {
+      analysis.push({
+        label: "Sender IP",
+        value: "Not found in headers",
+        status: "warning",
+        icon: Server
+      });
+    }
+
+    // Analyze Message-ID
+    const messageIdLine = headerLines.find(line => line.includes('message-id:'));
+    if (messageIdLine) {
+      const messageId = messageIdLine.split(':')[1]?.trim();
+      const isWellFormed = messageId && messageId.includes('@') && messageId.includes('<') && messageId.includes('>');
+      analysis.push({
+        label: "Message-ID",
+        value: isWellFormed ? "Well-formed" : "Malformed",
+        status: isWellFormed ? "normal" : "suspicious",
+        icon: Mail
+      });
+    } else {
+      analysis.push({
+        label: "Message-ID",
+        value: "Missing",
+        status: "suspicious",
+        icon: Mail
+      });
+    }
+
+    // Analyze Date/Time
+    const dateLine = headerLines.find(line => line.includes('date:'));
+    if (dateLine) {
+      const dateStr = dateLine.split(':').slice(1).join(':').trim();
+      const date = new Date(dateStr);
+      const now = new Date();
+      const timeDiff = Math.abs(now.getTime() - date.getTime()) / (1000 * 60 * 60); // hours
+      
+      analysis.push({
+        label: "Received Time",
+        value: date.toISOString().slice(0, 19) + ' UTC',
+        status: timeDiff > 24 ? "warning" : "normal",
+        icon: Clock
+      });
+    } else {
+      analysis.push({
+        label: "Received Time",
+        value: "No date header found",
+        status: "warning",
+        icon: Clock
+      });
+    }
+
+    // Check for geolocation indicators
+    const originatingIp = headerLines.find(line => line.includes('x-originating-ip:'));
+    if (originatingIp) {
+      analysis.push({
+        label: "Geolocation",
+        value: "External IP detected",
+        status: "warning",
+        icon: MapPin
+      });
+    } else {
+      analysis.push({
+        label: "Geolocation",
+        value: "Internal/Standard routing",
+        status: "normal",
+        icon: MapPin
+      });
+    }
+
+    return analysis;
+  };
+
+  const headerData = analyzeHeaders(emailHeaders || "");
 
   const getStatusColor = (status: string) => {
     switch (status) {
