@@ -89,13 +89,21 @@ const Index = () => {
 
     setIsAnalyzing(true);
     
-    // Simulate analysis
+    // Simulate analysis with proper DMARC logic
     setTimeout(() => {
+      // Generate SPF and DKIM results first
+      const spfResult = Math.random() > 0.5 ? "PASS" : "FAIL";
+      const dkimResult = Math.random() > 0.3 ? "PASS" : "FAIL";
+      
+      // DMARC only passes if SPF passes and aligns OR DKIM passes and aligns
+      // For simulation, we'll assume alignment when the protocol passes
+      const dmarcResult = (spfResult === "PASS") || (dkimResult === "PASS") ? "PASS" : "FAIL";
+      
       const mockResults = {
         threatScore: Math.floor(Math.random() * 100),
-        spfStatus: Math.random() > 0.5 ? "PASS" : "FAIL",
-        dkimStatus: Math.random() > 0.3 ? "PASS" : "FAIL",
-        dmarcStatus: Math.random() > 0.4 ? "PASS" : "FAIL",
+        spfStatus: spfResult,
+        dkimStatus: dkimResult,
+        dmarcStatus: dmarcResult,
         suspiciousElements: [
           "Sender domain mismatch detected",
           "Unusual header patterns found",
