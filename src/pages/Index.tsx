@@ -1,4 +1,3 @@
-
 import { useState, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,6 +18,121 @@ const Index = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResults, setAnalysisResults] = useState(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Function to analyze email headers for spoofing indicators
+  const analyzeEmailAuthentication = (headers: string, content: string) => {
+    console.log("Analyzing email headers:", headers);
+    console.log("Analyzing email content:", content);
+    
+    const headerLines = headers.toLowerCase().split('\n');
+    const suspiciousElements = [];
+    
+    // Check for SPF
+    let spfStatus = "FAIL";
+    const spfLine = headerLines.find(line => line.includes('received-spf:'));
+    if (spfLine) {
+      if (spfLine.includes('pass')) {
+        spfStatus = "PASS";
+      } else if (spfLine.includes('fail') || spfLine.includes('softfail')) {
+        spfStatus = "FAIL";
+        suspiciousElements.push("SPF authentication failed - sender IP not authorized");
+      }
+    } else {
+      // No SPF record found
+      suspiciousElements.push("No SPF record found - potential spoofing");
+    }
+    
+    // Check for DKIM
+    let dkimStatus = "FAIL";
+    const dkimLine = headerLines.find(line => line.includes('dkim-signature:') || line.includes('authentication-results:'));
+    if (dkimLine) {
+      if (dkimLine.includes('dkim=pass')) {
+        dkimStatus = "PASS";
+      } else {
+        dkimStatus = "FAIL";
+        suspiciousElements.push("DKIM signature verification failed");
+      }
+    } else {
+      suspiciousElements.push("No DKIM signature found - email integrity cannot be verified");
+    }
+    
+    // Check for DMARC
+    let dmarcStatus = "FAIL";
+    const dmarcLine = headerLines.find(line => line.includes('dmarc='));
+    if (dmarcLine) {
+      if (dmarcLine.includes('dmarc=pass')) {
+        dmarcStatus = "PASS";
+      } else {
+        dmarcStatus = "FAIL";
+        suspiciousElements.push("DMARC policy violation detected");
+      }
+    } else {
+      // DMARC logic: passes only if SPF OR DKIM passes AND aligns
+      // For spoofed emails, this should typically fail
+      if (spfStatus === "PASS" || dkimStatus === "PASS") {
+        // Check for domain alignment
+        const fromLine = headerLines.find(line => line.includes('from:'));
+        const returnPathLine = headerLines.find(line => line.includes('return-path:'));
+        
+        if (fromLine && returnPathLine) {
+          const fromDomain = fromLine.match(/@([^\s>]+)/)?.[1];
+          const returnPathDomain = returnPathLine.match(/@([^\s>]+)/)?.[1];
+          
+          if (fromDomain && returnPathDomain && fromDomain !== returnPathDomain) {
+            dmarcStatus = "FAIL";
+            suspiciousElements.push("Domain alignment failure - From and Return-Path domains don't match");
+          } else if (spfStatus === "PASS" || dkimStatus === "PASS") {
+            dmarcStatus = "PASS";
+          }
+        } else {
+          dmarcStatus = "FAIL";
+          suspiciousElements.push("DMARC evaluation failed - missing domain information");
+        }
+      } else {
+        dmarcStatus = "FAIL";
+        suspiciousElements.push("DMARC failed - neither SPF nor DKIM passed");
+      }
+    }
+    
+    // Additional spoofing indicators
+    const fromLine = headerLines.find(line => line.includes('from:'));
+    const replyToLine = headerLines.find(line => line.includes('reply-to:'));
+    
+    if (fromLine && replyToLine) {
+      const fromEmail = fromLine.match(/[\w.-]+@[\w.-]+/)?.[0];
+      const replyToEmail = replyToLine.match(/[\w.-]+@[\w.-]+/)?.[0];
+      
+      if (fromEmail && replyToEmail && fromEmail !== replyToEmail) {
+        suspiciousElements.push("From and Reply-To addresses don't match - potential spoofing");
+      }
+    }
+    
+    // Check for suspicious headers
+    if (headerLines.some(line => line.includes('x-originating-ip:'))) {
+      const origIpLine = headerLines.find(line => line.includes('x-originating-ip:'));
+      if (origIpLine) {
+        suspiciousElements.push("Email originated from external IP - verify sender authenticity");
+      }
+    }
+    
+    // Calculate threat score based on failed authentications
+    let threatScore = 0;
+    if (spfStatus === "FAIL") threatScore += 30;
+    if (dkimStatus === "FAIL") threatScore += 30;
+    if (dmarcStatus === "FAIL") threatScore += 25;
+    threatScore += suspiciousElements.length * 5;
+    threatScore = Math.min(threatScore, 100);
+    
+    console.log("Analysis results:", { spfStatus, dkimStatus, dmarcStatus, threatScore, suspiciousElements });
+    
+    return {
+      spfStatus,
+      dkimStatus,
+      dmarcStatus,
+      threatScore,
+      suspiciousElements
+    };
+  };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -89,35 +203,17 @@ const Index = () => {
 
     setIsAnalyzing(true);
     
-    // Simulate analysis with proper DMARC logic
+    // Analyze the actual email content instead of using random results
     setTimeout(() => {
-      // Generate SPF and DKIM results first
-      const spfResult = Math.random() > 0.5 ? "PASS" : "FAIL";
-      const dkimResult = Math.random() > 0.3 ? "PASS" : "FAIL";
+      const results = analyzeEmailAuthentication(emailHeaders, emailContent);
       
-      // DMARC only passes if SPF passes and aligns OR DKIM passes and aligns
-      // For simulation, we'll assume alignment when the protocol passes
-      const dmarcResult = (spfResult === "PASS") || (dkimResult === "PASS") ? "PASS" : "FAIL";
-      
-      const mockResults = {
-        threatScore: Math.floor(Math.random() * 100),
-        spfStatus: spfResult,
-        dkimStatus: dkimResult,
-        dmarcStatus: dmarcResult,
-        suspiciousElements: [
-          "Sender domain mismatch detected",
-          "Unusual header patterns found",
-          "Suspicious attachment type",
-        ].slice(0, Math.floor(Math.random() * 3) + 1),
-      };
-      
-      setAnalysisResults(mockResults);
+      setAnalysisResults(results);
       setIsAnalyzing(false);
       
       toast({
         title: "Analysis Complete",
-        description: `Threat score: ${mockResults.threatScore}/100`,
-        variant: mockResults.threatScore > 70 ? "destructive" : "default",
+        description: `Threat score: ${results.threatScore}/100`,
+        variant: results.threatScore > 70 ? "destructive" : "default",
       });
     }, 2000);
   };
