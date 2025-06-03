@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,6 +18,64 @@ const Index = () => {
   const [emailContent, setEmailContent] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResults, setAnalysisResults] = useState(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (file.type !== "text/plain" && !file.name.endsWith('.eml') && !file.name.endsWith('.txt')) {
+      toast({
+        title: "Invalid File Type",
+        description: "Please upload a .txt or .eml file containing email data",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const content = e.target?.result as string;
+      
+      // Simple heuristic to detect if it's headers or full email content
+      if (content.includes("Return-Path:") || content.includes("Received:") || content.includes("From:")) {
+        // Looks like email headers or full email
+        const lines = content.split('\n');
+        const headerEndIndex = lines.findIndex(line => line.trim() === '');
+        
+        if (headerEndIndex > 0) {
+          // Split headers and content
+          setEmailHeaders(lines.slice(0, headerEndIndex).join('\n'));
+          setEmailContent(lines.slice(headerEndIndex + 1).join('\n'));
+        } else {
+          // Assume it's all headers
+          setEmailHeaders(content);
+        }
+      } else {
+        // Assume it's email content
+        setEmailContent(content);
+      }
+
+      toast({
+        title: "File Uploaded",
+        description: `Successfully loaded ${file.name}`,
+      });
+    };
+
+    reader.onerror = () => {
+      toast({
+        title: "Upload Error",
+        description: "Failed to read the file",
+        variant: "destructive",
+      });
+    };
+
+    reader.readAsText(file);
+  };
+
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
 
   const handleAnalysis = async () => {
     if (!emailHeaders.trim() && !emailContent.trim()) {
@@ -114,10 +172,22 @@ const Index = () => {
                 )}
               </Button>
               
-              <Button variant="outline" className="border-slate-600 text-slate-300 hover:bg-slate-700">
+              <Button 
+                variant="outline" 
+                className="border-slate-600 text-slate-300 hover:bg-slate-700"
+                onClick={handleUploadClick}
+              >
                 <Upload className="h-4 w-4 mr-2" />
                 Upload File
               </Button>
+              
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".txt,.eml"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
             </div>
           </CardContent>
         </Card>
